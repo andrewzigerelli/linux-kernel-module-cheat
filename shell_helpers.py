@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
+import distutils.file_util
 import itertools
 import os
 import shlex
 import shutil
 import signal
+import subprocess
 
 class LF:
     '''
