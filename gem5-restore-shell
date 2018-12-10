@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# https://github.com/cirosantilli/linux-kernel-module-cheat#gem5-run-benchmark
+
+set -eu
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
+outfile="${root_dir}/out/gem5-bench-parsec.txt"
+arch=x86_64
+cmd="./run -a '$arch' --gem5 --run-id shell --port-offset 1"
+restore='-l 1 -- --ruby --cpu-type=DerivO3CPU --restore-with-cpu=DerivO3CPU --caches --l2cache --l1d_size=64kB --l1i_size=64kB --l2_size=256kB'
+
+# Generate a checkpoint after Linux boots, using the faster and less detailed CPU.
+# The boot takes a while, be patient young Padawan.
+
+# UNCOMMENT ONLY IF YOU DIDN'T GENERATE CHKPOINT
+#eval "$cmd"
+
+# THIS IS USUALLY TO BE RUN AFTER CHECKPOINT GENERATED
+eval "$cmd ${restore}"
