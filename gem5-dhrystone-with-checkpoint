@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# https://github.com/cirosantilli/linux-kernel-module-cheat#gem5-run-benchmark
+
+set -eu
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
+outfile="${root_dir}/out/gem5-bench-dhrystone.txt"
+arch=x86_64
+cmd="./run -a '$arch' --gem5 --eval-after '/gem5.sh'"
+
+# These cache sizes roughly match the ARM Cortex A75
+# https://en.wikipedia.org/wiki/ARM_Cortex-A75
+#restore='-l 1 -- --ruby --cpu-type=DerivO3CPU --restore-with-cpu=DerivO3CPU --caches --l2cache --l1d_size=64kB --l1i_size=128kB --l2_size=256kB'
+restore='-l 1 -- --cpu-type=DerivO3CPU --restore-with-cpu=DerivO3CPU --caches --l2cache --l1d_size=64kB --l1i_size=128kB --l2_size=256kB'
+
+# Generate a checkpoint after Linux boots, using the faster and less detailed CPU.
+# The boot takes a while, be patient young Padawan.
+
+printf 'n cycles\n' > "$outfile"
+#for n in 1000 10000 100000; do
+for n in 1000 ; do
+  # Restore the most recent checkpoint taken with the more detailed and slower HPI CPU,
+  # and run the benchmark with different parameters. We skip the boot completely, saving time!
+  eval "${cmd} --gem5-readfile 'dhrystone ${n}'" #&>/dev/null
+  printf "${n} " >> "$outfile"
+  ./gem5-stat -a "$arch" >> "$outfile"
+done
