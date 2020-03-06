@@ -1,44 +1,93 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/times.h>
+
+#include <lkmc.h>
+
+#define UART_DR(baseaddr) (*(unsigned int *)(baseaddr))
+#define UART_FR(baseaddr) (*(((unsigned int *)(baseaddr))+6))
 
 enum {
     UART_FR_RXFE = 0x10,
 };
 
-#define UART_DR(baseaddr) (*(unsigned int *)(baseaddr))
-#define UART_FR(baseaddr) (*(((unsigned int *)(baseaddr))+6))
+extern char heap_low;
+extern char heap_top;
 
-int _close(int file) { return -1; }
+char *heap_end = 0;
+
+void lkmc_baremetal_on_exit_callback(int status, void *arg) {
+    (void)arg;
+    if (status != 0) {
+        printf("lkmc_exit_status_%d\n", status);
+    }
+}
+
+int _close(int file) {
+    LKMC_UNUSED(file);
+    return -1;
+}
 
 int _fstat(int file, struct stat *st) {
+    LKMC_UNUSED(file);
     st->st_mode = S_IFCHR;
     return 0;
 }
 
-int _isatty(int file) { return 1; }
-int _lseek(int file, int ptr, int dir) { return 0; }
-int _open(const char *name, int flags, int mode) { return -1; }
+/* Required by assert. */
+int _getpid(void) { return 0; }
+
+/* Required by assert. */
+int _kill(pid_t pid, int sig) {
+    LKMC_UNUSED(pid);
+    exit(128 + sig);
+}
+
+int _isatty(int file) {
+    LKMC_UNUSED(file);
+    return 1;
+}
+
+int _lseek(int file, int ptr, int dir) {
+    LKMC_UNUSED(file);
+    LKMC_UNUSED(ptr);
+    LKMC_UNUSED(dir);
+    return 0;
+}
+
+int _open(const char *name, int flags, int mode) {
+    LKMC_UNUSED(name);
+    LKMC_UNUSED(flags);
+    LKMC_UNUSED(mode);
+    return -1;
+}
 
 int _read(int file, char *ptr, int len) {
     int todo;
+    LKMC_UNUSED(file);
     if (len == 0)
         return 0;
-    while (UART_FR(UART0_ADDR) & UART_FR_RXFE);
-    *ptr++ = UART_DR(UART0_ADDR);
+    while (UART_FR(LKMC_UART0_ADDR) & UART_FR_RXFE);
+    *ptr++ = UART_DR(LKMC_UART0_ADDR);
     for (todo = 1; todo < len; todo++) {
-        if (UART_FR(UART0_ADDR) & UART_FR_RXFE) {
+        if (UART_FR(LKMC_UART0_ADDR) & UART_FR_RXFE) {
             break;
         }
-        *ptr++ = UART_DR(UART0_ADDR);
+        *ptr++ = UART_DR(LKMC_UART0_ADDR);
     }
     return todo;
 }
 
-char *heap_end = 0;
+/* Dummy implementation that just increments an integer. */
+_CLOCK_T_ _times_r (struct _reent *r, struct tms *ptms) {
+    static long long unsigned t = 0;
+    (void)r;
+    (void)ptms;
+    return t++;
+}
+
 caddr_t _sbrk(int incr) {
-    extern char heap_low;
-    extern char heap_top;
     char *prev_heap_end;
     if (heap_end == 0) {
         heap_end = &heap_low;
@@ -54,35 +103,9 @@ caddr_t _sbrk(int incr) {
 
 int _write(int file, char *ptr, int len) {
     int todo;
+    LKMC_UNUSED(file);
     for (todo = 0; todo < len; todo++) {
-        UART_DR(UART0_ADDR) = *ptr++;
+        UART_DR(LKMC_UART0_ADDR) = *ptr++;
     }
     return len;
-}
-
-/* Only 0 is supported for now, arm semihosting cannot handle other values. */
-void _exit(int status) {
-#if defined(GEM5)
-#if defined(__arm__)
-	__asm__ __volatile__ ("mov r0, #0; mov r1, #0; .inst 0xEE000110 | (0x21 << 16);");
-#elif defined(__aarch64__)
-	__asm__ __volatile__ ("mov x0, #0; .inst 0XFF000110 | (0x21 << 16);");
-#endif
-#else
-#if defined(__arm__)
-    __asm__ __volatile__ ("mov r0, #0x18; ldr r1, =#0x20026; svc 0x00123456");
-#elif defined(__aarch64__)
-	/* TODO actually use the exit value here, just for fun. */
-    __asm__ __volatile__ (
-		"mov x1, #0x26\n" \
-		"movk x1, #2, lsl #16\n" \
-		"str x1, [sp,#0]\n" \
-		"mov x0, #0\n" \
-		"str x0, [sp,#8]\n" \
-		"mov x1, sp\n" \
-		"mov w0, #0x18\n" \
-		"hlt 0xf000\n"
-    );
-#endif
-#endif
 }

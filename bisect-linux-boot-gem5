@@ -1,34 +1,13 @@
-#!/usr/bin/env python3
-
-import imp
-import os
-import shutil
-import sys
-
-import common
-build_linux = imp.load_source('build-linux', os.path.join(common.root_dir, 'build_linux'))
-run = imp.load_source('run', os.path.join(common.root_dir, 'run'))
-
-parser = common.get_argparse(
-    argparse_args={
-        'description': '''Bisect the Linux kernel on gem5 boots.
-
-More information at: https://github.com/cirosantilli/linux-kernel-module-cheat#bisection
-'''},
-    default_args={
-        'gem5': True,
-        'linux_build_id': 'bisect',
-    },
-)
-args = common.setup(parser)
-# We need a clean rebuild because rebuilds at different revisions:
-# - may fail
-# - may not actually rebuild all files, e.g. on header changes
-common.rmrf(common.linux_build_dir)
-build_linux.LinuxComponent().do_build(args)
-status = run.main(args, {
-    'eval': 'm5 exit',
-})
-if status == 125 or status == 127:
-    status = 1
-sys.exit(status)
+#!/usr/bin/env bash
+# https://cirosantilli.com/linux-kernel-module-cheat#bisection
+set -eu
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+"${root_dir}/build-linux" --clean "$@"
+"${root_dir}/build-linux" "$@"
+set +e
+"${root_dir}/run" --quit-after-boot "$@" || status=$?
+# https://stackoverflow.com/questions/4713088/how-to-use-git-bisect/22592593#22592593
+if [ "$status" -eq 125 ] || [ "$status" -gt 127 ]; then
+  status=1
+fi
+exit "$status"

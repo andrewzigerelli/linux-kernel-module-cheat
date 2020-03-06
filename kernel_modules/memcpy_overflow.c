@@ -1,4 +1,4 @@
-/* https://github.com/cirosantilli/linux-kernel-module-cheat#config_fortify_source */
+/* https://cirosantilli.com/linux-kernel-module-cheat#config-fortify-source */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -8,8 +8,8 @@
 static int myinit(void)
 {
 	void *dst, *src;
-    dst = kmalloc(0x10, GFP_KERNEL);
-    src = kmalloc(0x1000000, GFP_KERNEL);
+	dst = kmalloc(0x10, GFP_KERNEL);
+	src = kmalloc(0x1000000, GFP_KERNEL);
 	memcpy(dst, src, 0x1000000);
 	return 0;
 }

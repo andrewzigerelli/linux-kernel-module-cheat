@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# https://github.com/cirosantilli/linux-kernel-module-cheat#gem5-run-benchmark
+# https://cirosantilli.com/linux-kernel-module-cheat#gem5-run-benchmark
 
 set -eu
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
@@ -23,5 +23,5 @@ for n in 1000; do
   # and run the benchmark with different parameters. We skip the boot completely, saving time!
   eval "${cmd} --gem5-readfile 'dhrystone ${n}' ${restore}" 
   printf "${n} " >> "$outfile"
-  ./gem5-stat -a "$arch" >> "$outfile"
+  ./gem5-stat --arch "$arch" | head -n 1 >> "$outfile"
 done

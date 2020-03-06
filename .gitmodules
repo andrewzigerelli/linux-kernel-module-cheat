@@ -1,13 +1,28 @@
+[submodule "submodules/boot-wrapper-aarch64"]
+	path = submodules/boot-wrapper-aarch64
+	url = git://git.kernel.org/pub/scm/linux/kernel/git/mark/boot-wrapper-aarch64.git
+[submodule "submodules/binutils-gdb"]
+	path = submodules/binutils-gdb
+	url = https://github.com/cirosantilli/binutils-gdb
 [submodule "submodules/buildroot"]
 	path = submodules/buildroot
 	url = https://github.com/cirosantilli/buildroot
 	ignore = dirty
 [submodule "submodules/crosstool-ng"]
 	path = submodules/crosstool-ng
-	url = https://github.com/crosstool-ng/crosstool-ng
+	url = https://github.com/cirosantilli/crosstool-ng
+[submodule "submodules/dhrystone"]
+	path = submodules/dhrystone
+	url = https://github.com/cirosantilli/dhrystone
+[submodule "submodules/gcc"]
+	path = submodules/gcc
+	url = https://github.com/cirosantilli/gcc
 [submodule "submodules/gem5"]
 	path = submodules/gem5
-	url = https://gem5.googlesource.com/public/gem5
+	url = https://github.com/cirosantilli/gem5
+[submodule "submodules/glibc"]
+	path = submodules/glibc
+	url = https://github.com/cirosantilli/glibc
 # The true upstream does not accept git submodule update --init --depth 1
 # git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
 # But git clone --branch --depth 1 worked weirdly:

@@ -3,35 +3,40 @@
 import distutils.dir_util
 import os
 import platform
+import shlex
 import shutil
 
 import common
+from shell_helpers import LF
+import path_properties
 
-class ModulesComponent(common.Component):
-    def add_parser_arguments(self, parser):
-        parser.add_argument(
+class Main(common.BuildCliFunction):
+    def __init__(self):
+        super().__init__(
+            description='''\
+Build our Linux kernel modules without using Buildroot.
+
+See also: https://cirosantilli.com/linux-kernel-module-cheat#host
+''')
+        self.add_argument(
             '--make-args',
             default='',
-        )
-        parser.add_argument(
-            '--host',
-            action='store_true',
-            default=False,
-            help='''\
-Build the Linux kernel modules for the host instead of guest.
-Use the host packaged cross toolchain.
+            help='''
+Pass custom options to make.
 ''',
         )
-        parser.add_argument(
-            'kernel_modules',
+        self._add_argument('--force-rebuild')
+        self.add_argument(
+            'kernel-modules',
             default=[],
-            help='Which kernel modules to build. Default: build all',
-            metavar='kernel-modules',
+            help='''\
+Which kernel modules to build. Default: build all.
+Can be either the path to the C file, or its basename without extension.''',
             nargs='*',
         )
 
-    def do_build(self, args):
-        build_dir = self.get_build_dir(args)
+    def build(self):
+        build_dir = self.get_build_dir()
         os.makedirs(build_dir, exist_ok=True)
         # I kid you not, out-of-tree build is not possible, O= does not work as for the kernel build:
         #
@@ -42,87 +47,81 @@ Use the host packaged cross toolchain.
         # This copies only modified files as per:
         # https://stackoverflow.com/questions/5718899/building-an-out-of-tree-linux-kernel-module-in-a-separate-object-directory
         distutils.dir_util.copy_tree(
-            common.kernel_modules_src_dir,
-            os.path.join(build_dir, common.kernel_modules_subdir),
+            self.env['kernel_modules_source_dir'],
+            os.path.join(build_dir, self.env['kernel_modules_subdir']),
             update=1,
         )
         distutils.dir_util.copy_tree(
-            common.include_src_dir,
-            os.path.join(build_dir, common.include_subdir),
+            self.env['include_source_dir'],
+            os.path.join(build_dir, self.env['include_subdir']),
             update=1,
         )
         all_kernel_modules = []
-        for basename in os.listdir(common.kernel_modules_src_dir):
-            src = os.path.join(common.kernel_modules_src_dir, basename)
-            if os.path.isfile(src):
+        for basename in os.listdir(self.env['kernel_modules_source_dir']):
+            abspath = os.path.join(self.env['kernel_modules_source_dir'], basename)
+            if os.path.isfile(abspath):
                 noext, ext = os.path.splitext(basename)
-                if ext == common.c_ext:
-                    all_kernel_modules.append(noext)
-        if args.kernel_modules == []:
+                if ext == self.env['c_ext']:
+                    relpath = abspath[len(self.env['root_dir']) + 1:]
+                    my_path_properties = path_properties.get(relpath)
+                    if my_path_properties.should_be_built(self.env):
+                        all_kernel_modules.append(noext)
+        if self.env['kernel_modules'] == []:
             kernel_modules = all_kernel_modules
         else:
-            kernel_modules = map(lambda x: os.path.splitext(os.path.split(x)[1])[0], args.kernel_modules)
-        object_files = map(lambda x: x + common.obj_ext, kernel_modules)
-        tool = 'gcc'
-        if args.host:
-            allowed_toolchains = ['host']
-            build_subdir = common.kernel_modules_build_host_subdir
+            kernel_modules = map(lambda x: os.path.splitext(os.path.split(x)[1])[0], self.env['kernel_modules'])
+        object_files = map(lambda x: x + self.env['obj_ext'], kernel_modules)
+        if self.env['host']:
+            build_subdir = self.env['kernel_modules_build_host_subdir']
         else:
-            allowed_toolchains = None
-            build_subdir = common.kernel_modules_build_subdir
-        gcc = common.get_toolchain_tool(tool, allowed_toolchains=allowed_toolchains)
-        prefix = gcc[:-len(tool)]
+            build_subdir = self.env['kernel_modules_build_subdir']
         ccache = shutil.which('ccache')
         if ccache is not None:
-            cc = '{} {}'.format(ccache, gcc)
+            cc = '{} {}'.format(ccache, self.env['gcc_path'])
         else:
-            cc = gcc
-        if args.verbose:
-            verbose = ['V=1']
-        else:
-            verbose = []
-        if args.host:
+            cc = self.env['gcc_path']
+        if self.env['host']:
             linux_dir = os.path.join('/lib', 'modules', platform.uname().release, 'build')
         else:
-            linux_dir = common.linux_build_dir
-        common.run_cmd(
+            linux_dir = self.env['linux_build_dir']
+        ccflags = [
+            '-I', self.env['root_dir'], LF,
+        ]
+        make_args_extra = []
+        if self.env['verbose']:
+            make_args_extra.extend(['V=1', LF])
+        if self.env['force_rebuild']:
+            make_args_extra.extend(['-B', LF])
+        self.sh.run_cmd(
             (
                 [
-                    'make', common.Newline,
-                    '-j', str(args.nproc), common.Newline,
-                    'ARCH={}'.format(common.linux_arch), common.Newline,
-                    'CC={}'.format(cc), common.Newline,
-                    'CROSS_COMPILE={}'.format(prefix), common.Newline,
-                    'LINUX_DIR={}'.format(linux_dir), common.Newline,
-                    'M={}'.format(build_subdir), common.Newline,
-                    'OBJECT_FILES={}'.format(' '.join(object_files)), common.Newline,
+                    'make', LF,
+                    '-j', str(self.env['nproc']), LF,
+                    'ARCH={}'.format(self.env['linux_arch']), LF,
+                    'CC={}'.format(cc), LF,
+                    'CCFLAGS={}'.format(self.sh.cmd_to_string(ccflags)), LF,
+                    'CROSS_COMPILE={}'.format(self.env['toolchain_prefix_dash']), LF,
+                    'LINUX_DIR={}'.format(linux_dir), LF,
+                    'M={}'.format(build_subdir), LF,
+                    'OBJECT_FILES={}'.format(' '.join(object_files)), LF,
                 ] +
-                common.shlex_split(args.make_args) +
-                verbose
+                make_args_extra +
+                self.sh.shlex_split(self.env['make_args'])
             ),
-            cwd=os.path.join(common.kernel_modules_build_subdir),
+            cwd=os.path.join(self.env['kernel_modules_build_subdir']),
         )
-        if not args.host:
-            common.copy_dir_if_update_non_recursive(
-                srcdir=common.kernel_modules_build_subdir,
-                destdir=common.out_rootfs_overlay_dir,
-                filter_ext=common.kernel_module_ext,
+        if not self.env['host']:
+            self.sh.copy_dir_if_update_non_recursive(
+                srcdir=self.env['kernel_modules_build_subdir'],
+                destdir=self.env['out_rootfs_overlay_lkmc_dir'],
+                filter_ext=self.env['kernel_module_ext'],
             )
 
-    def get_argparse_args(self):
-        return {
-                'description': '''\
-Build our Linux kernel modules without using Buildroot.
-
-See also: https://github.com/cirosantilli/linux-kernel-module-cheat#host
-'''
-        }
-
-    def get_build_dir(self, args):
-        if args.host:
-            return os.path.join(common.kernel_modules_build_host_dir)
+    def get_build_dir(self):
+        if self.env['host']:
+            return self.env['kernel_modules_build_host_dir']
         else:
-            return os.path.join(common.kernel_modules_build_dir)
+            return self.env['kernel_modules_build_dir']
 
 if __name__ == '__main__':
-    ModulesComponent().build()
+    Main().cli()

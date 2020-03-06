@@ -1,11 +1,11 @@
-/* https://github.com/cirosantilli/linux-kernel-module-cheat#ioctl */
+/* https://cirosantilli.com/linux-kernel-module-cheat#ioctl */
 
 #include <linux/debugfs.h>
 #include <linux/module.h>
 #include <linux/printk.h> /* printk */
 #include <linux/uaccess.h> /* copy_from_user, copy_to_user */
 
-#include "../include/ioctl.h"
+#include <lkmc/ioctl.h>
 
 static struct dentry *debugfs_file;
 

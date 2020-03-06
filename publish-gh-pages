@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# https://cirosantilli.com/linux-kernel-module-cheat#github-pages
+set -eu
+git push
+./build-doc --github-pages
+git checkout gh-pages
+git checkout master -- \
+  .gitignore \
+  '*.png' \
+  _config.yml \
+;
+cp out/README.html index.html
+git add index.html
+git commit --message "$(git log -n1 --pretty='%H' master)"
+git push
+git checkout -

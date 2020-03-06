@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+
+import common
+
+class Main(common.LkmcCliFunction):
+    def __init__(self):
+        super().__init__(
+            defaults={
+                'emulator': 'gem5',
+                'show_time': False,
+            },
+            description='''\
+Convert a BST vs heap stat file into a gnuplot input
+https://cirosantilli.com/linux-kernel-module-cheat#bst-vs-heap-vs-hashmap
+''',
+        )
+
+    def timed_main(self):
+        stats = self.get_stats()
+        it = iter(stats)
+        i = 1
+        for heap_num_cycles in it:
+            try:
+                bst_num_cycles = next(it)
+                hashmap_num_cycles = next(it)
+            except StopIteration:
+                # Automatic dumpstats at end may lead to one extra stat at the end.
+                break
+            print('{} {} {} {}'.format(
+                i,
+                heap_num_cycles,
+                bst_num_cycles,
+                hashmap_num_cycles,
+            ))
+            i += 1
+
+if __name__ == '__main__':
+    Main().cli()

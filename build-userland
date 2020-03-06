@@ -1,92 +1,124 @@
 #!/usr/bin/env python3
 
 import os
-import platform
 import shlex
-import shutil
 import subprocess
+import threading
 
+from shell_helpers import LF
 import common
+import thread_pool
 
-class UserlandComponent(common.Component):
-    def add_parser_arguments(self, parser):
-        parser.add_argument(
-            '--has-package',
-            action='append',
-            default=[],
-            help='''\
-Indicate that a given package is present in the root filesystem, which
-allows us to build examples that rely on it.
-''',
-        )
-        parser.add_argument(
-            '--host',
-            action='store_true',
-            default=False,
-            help='''\
-Build the userland programs for the host instead of guest.
-Use the host packaged cross toolchain.
-''',
-        )
-        parser.add_argument(
-            '--make-args',
-            default='',
-        )
-        parser.add_argument(
+class Main(common.BuildCliFunction):
+    def __init__(self, *args, **kwargs):
+        if not 'description' in kwargs:
+            kwargs['description'] = '''\
+Build our compiled userland examples.
+'''
+        if not 'defaults' in kwargs:
+            kwargs['defaults'] = {}
+        if not 'mode' in kwargs['defaults']:
+            kwargs['defaults']['mode'] = 'userland'
+        super().__init__(*args, **kwargs)
+        self._add_argument('--ccflags')
+        self._add_argument('--force-rebuild')
+        self._add_argument('--optimization-level')
+        self.add_argument(
             'targets',
             default=[],
             help='''\
-Build only the given userland programs.
-Default: build all examples that have their package dependencies met.
-For example, an OpenBLAS example can only be built if the target root filesystem
-has the OpenBLAS libraries and headers installed.
+Select to build only the given userland programs, or all programs under
+the given directories.
+
+Default: build all.
+
+Must point to either sources or directories under userland/, or to LKMC
+toplevel which is a synonym for userland/.
+
+Default: build all examples that have their package dependencies met, e.g.:
+
+-   userland/arch/ programs only build if the target arch matches
+-   an OpenBLAS example can only be built if the target root filesystem
+    has the OpenBLAS libraries and headers installed, which you must inform
+    with --package
 ''',
             nargs='*',
         )
 
-    def do_build(self, args):
-        build_dir = self.get_build_dir(args)
-        os.makedirs(build_dir, exist_ok=True)
-        if args.host:
-            allowed_toolchains = ['host']
+    def build(self):
+        build_dir = self.get_build_dir()
+        cc_flags = [
+            '-I', self.env['root_dir'], LF,
+            '-O{}'.format(self.env['optimization_level']), LF,
+        ] + self.sh.shlex_split(self.env['ccflags'])
+        if self.env['static']:
+            cc_flags.extend(['-static', LF])
+        extra_obj_lkmc_common = os.path.join(
+            build_dir,
+            self.env['common_basename_noext'] + self.env['obj_ext']
+        )
+        self._build_one(
+            in_path=self.env['common_c'],
+            out_path=extra_obj_lkmc_common,
+            cc_flags=cc_flags,
+            extra_deps=[self.env['common_h']],
+            link=False,
+        )
+        with thread_pool.ThreadPool(
+            self._build_one,
+            nthreads=self.env['nproc'],
+            submit_raise_exit=self.env['quit_on_fail'],
+        ) as my_thread_pool:
+            for target in self.env['targets']:
+                for path, in_dirnames, in_filenames in self.sh.walk(target):
+                    for in_filename in in_filenames:
+                        in_ext = os.path.splitext(in_filename)[1]
+                        if not in_ext in self.env['build_in_exts']:
+                            continue
+                        in_path = os.path.join(path, in_filename)
+                        my_thread_pool.submit({
+                            'cc_flags': cc_flags,
+                            'extra_objs_lkmc_common': [extra_obj_lkmc_common],
+                            'in_path': in_path,
+                            'out_path': self.resolve_userland_executable(in_path),
+                        })
+        exit_status = self._handle_thread_pool_errors(my_thread_pool)
+        if exit_status != 0:
+            return exit_status
+        if self.env['copy_overlay']:
+            self.sh.copy_dir_if_update(
+                srcdir=build_dir,
+                destdir=os.path.join(
+                    self.env['out_rootfs_overlay_lkmc_dir'],
+                    self.env['out_rootfs_overlay_dir_prefix']
+                ),
+                filter_ext=self.env['userland_executable_ext'],
+            )
+        return exit_status
+
+    def clean(self):
+        if self.env['in_tree']:
+            for target in self.env['targets']:
+                if os.path.exists(target):
+                    if os.path.isfile(target):
+                        self.sh.rmrf(self.resolve_userland_executable(target))
+                    else:
+                        for path, dirnames, filenames in self.sh.walk(target):
+                            for filename in filenames:
+                                if os.path.splitext(filename)[1] in self.env['userland_out_exts']:
+                                    self.sh.rmrf(os.path.join(path, filename))
         else:
-            allowed_toolchains = ['buildroot']
-        cc = common.get_toolchain_tool('gcc', allowed_toolchains=allowed_toolchains)
-        cxx = common.get_toolchain_tool('g++', allowed_toolchains=allowed_toolchains)
-        common.run_cmd(
-            (
-                [
-                    'make', common.Newline,
-                    '-j', str(args.nproc), common.Newline,
-                    'ARCH={}'.format(args.arch), common.Newline,
-                    'CCFLAGS_SCRIPT={} {}'.format('-I', common.userland_src_dir), common.Newline,
-                    'COMMON_DIR={}'.format(common.root_dir), common.Newline,
-                    'CC={}'.format(cc), common.Newline,
-                    'CXX={}'.format(cxx), common.Newline,
-                    'PKG_CONFIG={}'.format(common.buildroot_pkg_config), common.Newline,
-                    'STAGING_DIR={}'.format(common.buildroot_staging_dir), common.Newline,
-                    'OUT_DIR={}'.format(build_dir), common.Newline,
-                ] +
-                common.add_newlines(['HAS_{}=y'.format(package.upper()) for package in args.has_package]) +
-                shlex.split(args.make_args) +
-                common.add_newlines([os.path.join(build_dir, os.path.splitext(os.path.split(target)[1])[0]) + common.userland_build_ext for target in args.targets])
-            ),
-            cwd=common.userland_src_dir,
-            extra_paths=[common.ccache_dir],
-        )
-        common.copy_dir_if_update_non_recursive(
-            srcdir=build_dir,
-            destdir=common.out_rootfs_overlay_dir,
-            filter_ext=common.userland_build_ext,
-        )
+            for target in self.env['targets']:
+                self.sh.rmrf(self.resolve_userland_executable(target))
 
-    def get_argparse_args(self):
-        return {
-            'description': 'Build our compiled userland examples',
-        }
+    def get_build_dir(self):
+        return self.env['userland_build_dir']
 
-    def get_build_dir(self, args):
-        return common.userland_build_dir
+    def setup_one(self):
+        self.env['targets'] = self.resolve_targets(
+            [self.env['userland_source_dir']],
+            self.env['targets']
+        )
 
 if __name__ == '__main__':
-    UserlandComponent().build()
+    Main().cli()

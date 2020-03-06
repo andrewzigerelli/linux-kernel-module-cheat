@@ -1,4 +1,4 @@
-/* https://github.com/cirosantilli/linux-kernel-module-cheat#mmap */
+/* https://cirosantilli.com/linux-kernel-module-cheat#mmap */
 
 #include <linux/fs.h>
 #include <linux/init.h>
@@ -24,8 +24,7 @@ static void vm_close(struct vm_area_struct *vma)
 }
 
 /* First page access. */
-	int (*fault)(struct vm_fault *vmf);
-static int vm_fault(struct vm_fault *vmf)
+static vm_fault_t vm_fault(struct vm_fault *vmf)
 {
 	struct page *page;
 	struct mmap_info *info;
@@ -79,13 +78,13 @@ static int open(struct inode *inode, struct file *filp)
 static ssize_t read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 {
 	struct mmap_info *info;
-    int ret;
+	int ret;
 
 	pr_info("read\n");
 	info = filp->private_data;
-    ret = min(len, (size_t)BUFFER_SIZE);
-    if (copy_to_user(buf, info->data, ret)) {
-        ret = -EFAULT;
+	ret = min(len, (size_t)BUFFER_SIZE);
+	if (copy_to_user(buf, info->data, ret)) {
+		ret = -EFAULT;
 	}
 	return ret;
 }
@@ -96,11 +95,11 @@ static ssize_t write(struct file *filp, const char __user *buf, size_t len, loff
 
 	pr_info("write\n");
 	info = filp->private_data;
-    if (copy_from_user(info->data, buf, min(len, (size_t)BUFFER_SIZE))) {
-        return -EFAULT;
-    } else {
-        return len;
-    }
+	if (copy_from_user(info->data, buf, min(len, (size_t)BUFFER_SIZE))) {
+		return -EFAULT;
+	} else {
+		return len;
+	}
 }
 
 static int release(struct inode *inode, struct file *filp)

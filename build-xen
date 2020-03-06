@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# https://cirosantilli.com/linux-kernel-module-cheat#xen
+set -eux
+cd submodules/xen
+make \
+  -j `nproc` \
+  dist-xen \
+  CONFIG_DEBUG=y \
+  CONFIG_EARLY_PRINTK=pl011,0x09000000 \
+  CROSS_COMPILE=aarch64-linux-gnu- \
+  XEN_TARGET_ARCH=arm64 \
+;
+cd ../boot-wrapper-aarch64
+../../out/qemu/default/aarch64-softmmu/qemu-system-aarch64 \
+  -machine virt \
+  -machine virtualization=on \
+  -machine gic_version=3 \
+  -cpu cortex-a57 \
+  -kernel xen-system.axf \
+  -serial mon:stdio \
+  -nographic \
+  -machine dumpdtb=dtb.dtb \
+;
+autoreconf -i
+./configure \
+  --enable-gicv3 \
+  --enable-psci \
+  --host=aarch64-linux-gnu \
+  --with-cmdline="console=hvc0 earlycon=pl011,0x09000000 root=/dev/vda rw" \
+  --with-dtb=dtb.dtb \
+  --with-kernel-dir=../../out/linux/default/aarch64 \
+  --with-xen-cmdline="dtuart=/pl011,0x09000000 console=dtuart no-bootscrub dom0_mem=512M loglvl=all guest_loglvl=all" \
+  --with-xen=../xen/xen/xen \
+;
+make -j `nproc`
+../../out/qemu/default/aarch64-softmmu/qemu-system-aarch64 \
+  -machine virt \
+  -machine virtualization=on \
+  -machine gic_version=3 \
+  -cpu cortex-a57 \
+  -kernel xen-system.axf \
+  -serial mon:stdio \
+  -nographic \
+;

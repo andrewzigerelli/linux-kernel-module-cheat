@@ -1,35 +1,77 @@
-#!/usr/bin/env bash
-set -eux
-for emulator in --qemu --gem5; do
-  # Userland.
-  # TODO make work.
-  #./run --arch x86_64 --background --userland add "$emulator" --wait-gdb &
-  #./run-gdb --arch x86_64 --userland add "$emulator" --test "$@"
-  #wait
+#!/usr/bin/env python3
 
-  # Baremetal.
-  ./run --arch arm --background --baremetal add "$emulator" --wait-gdb &
-  ./run-gdb --arch arm --baremetal add "$emulator" --test "$@"
-  wait
-  ./run --arch arm --background --baremetal arch/arm/add "$emulator" --wait-gdb &
-  ./run-gdb --arch arm --baremetal arch/arm/add "$emulator" --test "$@"
-  wait
-  ./run --arch arm --background --baremetal arch/arm/regs "$emulator" --wait-gdb &
-  ./run-gdb --arch arm --baremetal arch/arm/regs "$emulator" --test "$@"
-  wait
-  ./run --arch aarch64 --background --baremetal add "$emulator" --wait-gdb &
-  ./run-gdb --arch aarch64 --baremetal add "$emulator" --test "$@"
-  wait
-  ./run --arch aarch64 --background --baremetal arch/aarch64/add "$emulator" --wait-gdb &
-  ./run-gdb --arch aarch64 --baremetal arch/aarch64/add "$emulator" --test "$@"
-  wait
-  ./run --arch aarch64 --background --baremetal arch/aarch64/regs "$emulator" --wait-gdb &
-  ./run-gdb --arch aarch64 --baremetal arch/aarch64/regs "$emulator" --test "$@"
-  wait
-  ./run --arch aarch64 --background --baremetal arch/aarch64/fadd "$emulator" --wait-gdb &
-  ./run-gdb --arch aarch64 --baremetal arch/aarch64/fadd "$emulator" --test "$@"
-  wait
-  ./run --arch aarch64 --background --baremetal arch/aarch64/regs "$emulator" --wait-gdb &
-  ./run-gdb --arch aarch64 --baremetal arch/aarch64/regs "$emulator" --test "$@"
-  wait
-done
+import threading
+import os
+
+import common
+import lkmc.import_path
+import path_properties
+
+class Main(common.TestCliFunction):
+    def __init__(self):
+        super().__init__(
+            description='''\
+https://cirosantilli.com/linux-kernel-module-cheat#gdb-tests
+''',
+            defaults={
+                'mode': 'userland',
+            }
+        )
+        self.add_argument(
+            'tests',
+            nargs='*',
+            help='''\
+If given, run only the given tests. Otherwise, run all tests,
+found by searching for the Python test files.
+'''
+        )
+
+    def setup_one(self):
+        self.env['tests'] = self.resolve_targets(
+            [
+                self.env['baremetal_source_dir'],
+                self.env['userland_source_dir']
+            ],
+            self.env['tests']
+        )
+
+    def timed_main(self):
+        if self.env['mode'] == 'userland':
+            exts = self.env['build_in_exts']
+        elif self.env['mode'] == 'baremetal':
+            exts = self.env['baremetal_build_in_exts']
+        rootdir_abs_len = len(self.env['root_dir'])
+        for test in self.env['tests']:
+            for path, in_dirnames, in_filenames in self.sh.walk(test):
+                path_abs = os.path.abspath(path)
+                dirpath_relative_root = path_abs[rootdir_abs_len + 1:]
+                for in_filename in in_filenames:
+                    in_file_abs = os.path.join(path_abs, in_filename)
+                    path_relative_root = os.path.join(dirpath_relative_root, in_filename)
+                    path_relative_root_base, ext = os.path.splitext(path_relative_root)
+                    if ext in exts and os.path.exists(path_relative_root_base + '.py'):
+                        my_path_properties = path_properties.get(path_relative_root)
+                        if my_path_properties.should_be_tested(
+                            self.env,
+                        ):
+                            run = lkmc.import_path.import_path_main('run')
+                            run_gdb = lkmc.import_path.import_path_main('run-gdb')
+                            common_args = self.get_common_args()
+                            common_args[self.env['mode']] = path_relative_root
+                            run_args = common_args.copy()
+                            run_args['gdb_wait'] = True
+                            run_args.update(self.base_run_args)
+                            test_id_string = self.test_setup(
+                                run_args,
+                                '{} {}'.format(self.env['mode'], path_relative_root)
+                            )
+                            run_thread = threading.Thread(target=lambda: run(**run_args))
+                            run_thread.start()
+                            gdb_args = common_args.copy()
+                            gdb_args['test'] = True
+                            exit_status = run_gdb(**gdb_args)
+                            run_thread.join()
+                            self.test_teardown(run, exit_status, test_id_string)
+
+if __name__ == '__main__':
+    Main().cli()

@@ -1,4 +1,4 @@
-/* https://github.com/cirosantilli/linux-kernel-module-cheat#anonymous-inode */
+/* https://cirosantilli.com/linux-kernel-module-cheat#anonymous-inode */
 
 #include <linux/anon_inodes.h>
 #include <linux/debugfs.h>
@@ -9,7 +9,7 @@
 #include <linux/printk.h> /* printk */
 #include <linux/uaccess.h> /* copy_from_user */
 
-#include "../include/anonymous_inode.h"
+#include <lkmc/anonymous_inode.h>
 
 static struct dentry *debugfs_file;
 static u32 myval = 1;

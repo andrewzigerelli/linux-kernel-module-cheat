@@ -1,38 +1,32 @@
 #!/usr/bin/env python3
 
-import types
-
 import common
 
-parser = common.get_argparse(argparse_args={
-    'description': '''Print the value of a common.py variable.
+class Main(common.LkmcCliFunction):
+    def __init__(self):
+        super().__init__(
+            defaults = {
+                'show_time': False,
+            },
+            description='''\
+Print the value of a self.env['py'] variable.
+https://cirosantilli.com/linux-kernel-module-cheat#getvar
+''',
+        )
+        self.add_argument('--type', choices=['input', 'all'], default='all')
+        self.add_argument('variable', nargs='?')
 
-This is useful to:
+    def timed_main(self):
+        variable = self.env['variable']
+        if variable:
+            print(self.env[variable])
+        else:
+            if self.env['type'] == 'input':
+                to_print = self.input_args
+            elif self.env['type'] == 'all':
+                to_print = self.env
+            for key in sorted(to_print):
+                print('{}={}'.format(key, self.env[key]))
 
-* give dry commands on the README that don't change when we refactor directory structure
-* create simple bash scripts that call use common.py variables
-
-For example, to get the Buildroot output directory for an ARM build, use:
-
-....
-./%(prog)s -a arm buildroot_build_dir
-....
-
-List all available variables:
-
-....
-./%(prog)s
-....
-....
-'''
-})
-parser.add_argument('variable', nargs='?')
-args = common.setup(parser)
-if args.variable:
-    print(getattr(common, args.variable))
-else:
-    for attr in dir(common):
-        if not attr.startswith('__'):
-            val = getattr(common, attr)
-            if not callable(val) and not type(val) is types.ModuleType:
-                print('{} {}'.format(attr, val))
+if __name__ == '__main__':
+    Main().cli()

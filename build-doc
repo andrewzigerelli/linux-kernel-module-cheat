@@ -1,2 +1,115 @@
-#!/usr/bin/env bash
-asciidoctor -o out/README.html -v README.adoc
+#!/usr/bin/env python3
+
+import re
+
+import common
+from shell_helpers import LF
+import os
+import subprocess
+
+class Main(common.LkmcCliFunction):
+    def __init__(self):
+        super().__init__(
+            defaults = {
+                'show_time': False,
+            },
+            description='''\
+https://cirosantilli.com/linux-kernel-module-cheat#build-the-documentation
+''',
+        )
+        self.add_argument(
+            '--github-pages',
+            default=False,
+            help='''
+Build for GitHub pages instead of a local build. This redirects all links
+from the README to example sources to GitHub rather than locally.
+'''
+        )
+
+    def timed_main(self):
+        asciidoctor_dir = os.path.join(self.env['root_dir'], 'asciidoctor')
+        github_pages_opts = []
+        if self.env['github_pages']:
+            link_target_script = 'link-target-github.rb'
+            github_pages_opts.extend(['--attribute', 'docinfo=shared', LF])
+        else:
+            link_target_script = 'link-target-up.rb'
+        exit_status = self.sh.run_cmd(
+            [
+                'asciidoctor', LF,
+                '--failure-level', 'info', LF,
+                '--require', os.path.join(asciidoctor_dir, link_target_script), LF,
+                '--out-file', self.env['readme_out'], LF,
+                '--trace', LF,
+                '--verbose', LF,
+            ] +
+            github_pages_opts +
+            [
+                self.env['readme'], LF,
+            ],
+            out_file=self.env['build_doc_log'],
+        )
+
+        # Check that all local files linked from README exist.
+        external_link_re = re.compile('^https?://')
+        for link in self.sh.check_output([
+            os.path.join(asciidoctor_dir, 'extract-link-targets'),
+            self.env['readme']
+        ]).decode().splitlines():
+            if not external_link_re.match(link):
+                if not os.path.lexists(os.path.join(self.env['root_dir'], link)):
+                    self.log_error('broken link to local file: ' + link)
+                    exit_status = 1
+
+        # Check that there are not links to the GitHub README.
+        # https://github.com/isaacs/github/issues/1610
+        for grep_line in self.sh.check_output(
+            [
+                'git',
+                'grep',
+                '--fixed-strings',
+                self.env['github_repo_url'] + '#',
+                LF
+            ],
+            cwd=self.env['root_dir'],
+            raise_on_failure=False
+        ).decode().splitlines():
+            self.log_error('link to GitHub readme: {}'.format(
+                grep_line
+            ))
+            exit_status = 1
+
+        # Check that non-README links to README IDs exit.
+        header_ids = set()
+        grep_line_location_re = re.compile('^(.*?:\d+):')
+        grep_line_hash_re = re.compile('^([a-z0-9_-]+)')
+        for header_id in self.sh.check_output([
+            os.path.join(asciidoctor_dir, 'extract-header-ids'),
+            self.env['readme']
+        ]).decode().splitlines():
+            header_ids.add(header_id)
+        for grep_line in self.sh.check_output(
+            [
+                'git',
+                'grep',
+                '--fixed-strings',
+                self.env['homepage_url'] + '#',
+                LF
+            ],
+            cwd=self.env['root_dir']
+        ).decode().splitlines():
+            url_index = grep_line.index(self.env['homepage_url'])
+            hash_start_index = url_index + len(self.env['homepage_url'])
+            if len(grep_line) > hash_start_index:
+                hash_str = grep_line_hash_re.search(grep_line[hash_start_index + 1:]).group(1)
+                if not hash_str in header_ids:
+                    self.log_error('broken link to {} at {}'.format(
+                        hash_str,
+                        grep_line_location_re.search(grep_line).group(1))
+                    )
+                    exit_status = 1
+
+        return exit_status
+
+if __name__ == '__main__':
+    Main().cli()

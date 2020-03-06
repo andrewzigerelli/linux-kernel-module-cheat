@@ -1,0 +1,24 @@
+#!/usr/bin/env ruby
+
+# https://cirosantilli.com/linux-kernel-module-cheat#asciidoctor-extract-header-ids
+
+require 'asciidoctor'
+require 'asciidoctor/extensions'
+
+class Main < Asciidoctor::Extensions::TreeProcessor
+  def process document
+    return unless document.blocks?
+    (document.find_by context: :section).each do |section|
+      if section.id
+        puts section.id
+      end
+    end
+    nil
+  end
+end
+
+Asciidoctor::Extensions.register do
+  treeprocessor Main
+end
+
+(Asciidoctor.load_file(ARGV[0])).convert

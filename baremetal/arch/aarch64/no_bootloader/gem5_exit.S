@@ -1,3 +1,5 @@
-.global mystart
-mystart:
-    mov x0, #0; .inst 0XFF000110 | (0x21 << 16);
+#include <lkmc/m5ops.h>
+
+.global lkmc_start
+lkmc_start:
+    LKMC_M5OPS_EXIT_ASM
