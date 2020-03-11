@@ -97,7 +97,7 @@ for key in consts['arch_short_to_long_dict']:
 consts['default_arch'] = 'x86_64'
 consts['gem5_cpt_prefix'] = '^cpt\.'
 def git_sha(repo_path):
-    return subprocess.check_output(['git', '-C', repo_path, 'log', '-1', '--format=%H']).decode().rstrip()
+    return subprocess.check_output(['/ihome/junyang/anz37/bin/git', '-C', repo_path, 'log', '-1', '--format=%H']).decode().rstrip()
 consts['sha'] = common.git_sha(consts['root_dir'])
 consts['release_dir'] = os.path.join(consts['out_dir'], 'release')
 consts['release_zip_file'] = os.path.join(consts['release_dir'], 'lkmc-{}.zip'.format(consts['sha']))
