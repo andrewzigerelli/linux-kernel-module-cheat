@@ -578,7 +578,7 @@ Which components to build. Default: qemu-buildroot
                     '--gemfile', os.path.join(self.env['root_dir'], 'Gemfile'), LF,
                 ])
             git_cmd_common = [
-                '/ihome/junyang/anz37/bin/git', LF,
+                'git', LF,
                 'submodule', LF,
                 'update', LF,
                 '--init', LF,

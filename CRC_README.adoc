@@ -1,0 +1,49 @@
+= Linux Kernel Module Cheat for CRC
+
+== Before building
+
+If necessary, change the git commands from "git" to a more up to date binary.
+
+Either load an updated module
+e.g.
+....
+module load git/2.9.5
+....
+
+Or build git yourself and then patch. 
+
+Example diffs are blow.
+
+diff --git a/build b/build
++++ b/build
+@@ -578,7 +578,7 @@ Which components to build. Default: qemu-buildroot
+                     '--gemfile', os.path.join(self.env['root_dir'], 'Gemfile'), LF,
+                 ])
+             git_cmd_common = [
+-                'git', LF,
++                '/ihome/junyang/anz37/bin/git', LF,
+                 'submodule', LF,
+                 'update', LF,
+                 '--init', LF,
+
+diff --git a/common.py b/common.py
+index 0d92586..b3d7595 100644
+--- a/common.py
++++ b/common.py
+@@ -97,7 +97,7 @@ for key in consts['arch_short_to_long_dict']:
+ consts['default_arch'] = 'x86_64'
+ consts['gem5_cpt_prefix'] = '^cpt\.'
+ def git_sha(repo_path):
+-    return subprocess.check_output(['git', '-C', repo_path, 'log', '-1', '--format=%H']).decode().rstrip()
++    return subprocess.check_output(['/ihome/junyang/anz37/bin/git', '-C', repo_path, 'log', '-1', '--format=%H']).decode().rstrip()
+ consts['sha'] = common.git_sha(consts['root_dir'])
+ consts['release_dir'] = os.path.join(consts['out_dir'], 'release')
+ consts['release_zip_file'] = os.path.join(consts['release_dir'], 'lkmc-{}.zip'.format(consts['sha']))
+
+
+== To build
+....
+git clone https://github.com/andrewzigerelli/linux-kernel-module-cheat
+cd linux-kernel-module-cheat
+./build --no-apt --download-dependencies qemu-buildroot
+....
